@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
-from rag import get_answer
+from rag import get_answer, get_answer_with_debug
 from datetime import datetime, UTC
 import time
 import os
@@ -143,6 +143,7 @@ class ResponseMetadata(BaseModel):
     response_time_ms: Optional[int] = Field(None, description="Response time in milliseconds")
     retrieved_conditions: Optional[int] = Field(None, description="Number of medical conditions retrieved from knowledge base")
     confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Confidence score of the response (0-1)")
+    debug: Optional[dict] = Field(None, description="Debug information about embedding and indexing flow")
 
 class DiagnosisResponse(BaseModel):
     question: str = Field(..., description="The original query submitted by the user")
@@ -276,7 +277,7 @@ The system will:
         }
     }
 )
-async def diagnose(request: QueryRequest):
+async def diagnose(request: QueryRequest, debug: bool = Query(False, description="Return embedding/indexing debug info")):
     """
     Process a medical diagnosis query in Hebrew.
     
@@ -288,8 +289,12 @@ async def diagnose(request: QueryRequest):
     logger.info(f"Processing query: {request.question[:50]}...")
     
     try:
-        # Get answer from RAG system
-        answer = get_answer(request.question)
+        # Get answer (optionally with debug info)
+        if debug:
+            answer, debug_info = get_answer_with_debug(request.question)
+        else:
+            answer = get_answer(request.question)
+            debug_info = None
         
         # Calculate response time
         response_time_ms = int((time.time() - start_time) * 1000)
@@ -302,7 +307,8 @@ async def diagnose(request: QueryRequest):
             metadata=ResponseMetadata(
                 response_time_ms=response_time_ms,
                 retrieved_conditions=3,  # Fixed for now, could be dynamic
-                confidence_score=0.85    # Fixed for now, could be calculated
+                confidence_score=0.85,   # Fixed for now, could be calculated
+                debug=debug_info
             )
         )
         

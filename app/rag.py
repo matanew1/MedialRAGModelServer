@@ -25,13 +25,16 @@ with open(DATA_PATH, encoding="utf-8") as f:
 
 texts = [item["disease"] + " " + item.get("symptoms", "") for item in medical_data]
 embeddings = embedder.encode(texts, convert_to_numpy=True)
+EMBEDDING_DIM = int(embeddings.shape[1])
 
 # Build FAISS index if not exists
+INDEX_BUILT = False
 if not os.path.exists(INDEX_PATH):
     Path(INDEX_PATH).parent.mkdir(parents=True, exist_ok=True)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(embeddings)
     faiss.write_index(index, INDEX_PATH)
+    INDEX_BUILT = True
 else:
     index = faiss.read_index(INDEX_PATH)
 
@@ -52,3 +55,43 @@ def get_answer(query: str):
 תשובה:"""
 
     return call_llm(prompt)
+
+
+def get_answer_with_debug(query: str):
+    """Returns (answer, debug_info) including embedding and FAISS search details."""
+    query_embedding = embedder.encode([query], convert_to_numpy=True)
+    distances, indices = index.search(query_embedding, k=VECTOR_SEARCH_TOP_K)
+
+    idxs = indices[0].tolist()
+    dists = distances[0].tolist()
+
+    context_items = [medical_data[i] for i in idxs]
+    context_str = "\n\n".join(json.dumps(item, ensure_ascii=False, indent=2) for item in context_items)
+
+    prompt = f"""אתה עוזר רפואי חכם. על סמך הנתונים הבאים, ענה על השאלה בצורה ברורה וקצרה:
+    
+שאלה: {query}
+
+מידע:
+{context_str}
+
+תשובה:"""
+
+    answer = call_llm(prompt)
+
+    debug_info = {
+        "embedder_model": EMBEDDER_MODEL,
+        "embedding_dim": EMBEDDING_DIM,
+        "vector_search_top_k": VECTOR_SEARCH_TOP_K,
+        "index_path": INDEX_PATH,
+        "index_built": INDEX_BUILT,
+        "indices": idxs,
+        "distances": dists,
+        "retrieved_items": [
+            {"disease": item.get("disease"), "symptoms": item.get("symptoms")}
+            for item in context_items
+        ],
+        "prompt_preview": prompt[:700],
+    }
+
+    return answer, debug_info
