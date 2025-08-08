@@ -216,6 +216,20 @@ python main.py
 
 The server will start on `http://localhost:8000`
 
+## ▶️ Run it
+
+### API only (port 8000)
+
+```powershell
+docker compose up -d
+```
+
+### API + Nginx (ports 8080/8443)
+
+```powershell
+docker compose --profile production up -d
+```
+
 ## 📖 API Usage
 
 ### Endpoint: `POST /diagnose`
