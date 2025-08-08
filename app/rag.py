@@ -1,17 +1,20 @@
 import json
 import os
+from pathlib import Path
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from model import call_llm
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# Load environment variables from .env file
-load_dotenv(dotenv_path="../.env")
+# Load environment variables from .env file (resolve regardless of CWD)
+env_path = find_dotenv(usecwd=True) or str((Path(__file__).resolve().parent.parent / ".env"))
+load_dotenv(dotenv_path=env_path)
 
 # Configuration from environment variables
-DATA_PATH = os.getenv("DATA_PATH", "../data/diseases.json")
-INDEX_PATH = os.getenv("INDEX_PATH", "../index/faiss.index")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_PATH = os.getenv("DATA_PATH", str(PROJECT_ROOT / "data" / "diseases.json"))
+INDEX_PATH = os.getenv("INDEX_PATH", str(PROJECT_ROOT / "index" / "faiss.index"))
 EMBEDDER_MODEL = os.getenv("EMBEDDER_MODEL", "distiluse-base-multilingual-cased")
 VECTOR_SEARCH_TOP_K = int(os.getenv("VECTOR_SEARCH_TOP_K", "3"))
 
@@ -25,6 +28,7 @@ embeddings = embedder.encode(texts, convert_to_numpy=True)
 
 # Build FAISS index if not exists
 if not os.path.exists(INDEX_PATH):
+    Path(INDEX_PATH).parent.mkdir(parents=True, exist_ok=True)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(embeddings)
     faiss.write_index(index, INDEX_PATH)

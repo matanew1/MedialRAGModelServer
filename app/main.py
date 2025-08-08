@@ -8,10 +8,12 @@ from datetime import datetime, UTC
 import time
 import os
 import logging
-from dotenv import load_dotenv
+from pathlib import Path
+from dotenv import load_dotenv, find_dotenv
 
-# Load environment variables from .env file
-load_dotenv(dotenv_path="../.env")
+# Load environment variables from .env file (resolve regardless of CWD)
+env_path = find_dotenv(usecwd=True) or str((Path(__file__).resolve().parent.parent / ".env"))
+load_dotenv(dotenv_path=env_path)
 
 # Configuration from environment variables
 API_VERSION = os.getenv("API_VERSION", "1.0.0")
