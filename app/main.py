@@ -8,6 +8,7 @@ from datetime import datetime, UTC
 import time
 import os
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from dotenv import load_dotenv, find_dotenv
 
@@ -34,6 +35,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # FastAPI app with detailed metadata matching swagger.yaml
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info(f"Starting RAG Medical API v{API_VERSION} in {ENVIRONMENT} mode")
+    logger.info(f"Server will run on {HOST}:{PORT}")
+    yield
+    # Shutdown
+    logger.info("Shutting down RAG Medical API")
+
+
 app = FastAPI(
     title="RAG Medical Diagnosis API",
     description="""
@@ -92,7 +103,8 @@ System monitoring and health check endpoints.
 Use these endpoints to monitor service availability and performance.
             """
         }
-    ]
+    ],
+    lifespan=lifespan
 )
 
 # Add CORS middleware for production
@@ -103,16 +115,6 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
-
-# Add startup event
-@app.on_event("startup")
-async def startup_event():
-    logger.info(f"Starting RAG Medical API v{API_VERSION} in {ENVIRONMENT} mode")
-    logger.info(f"Server will run on {HOST}:{PORT}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Shutting down RAG Medical API")
 
 # Pydantic models matching swagger schemas
 class QueryRequest(BaseModel):
