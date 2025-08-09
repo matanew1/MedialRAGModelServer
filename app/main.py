@@ -127,17 +127,11 @@ class QueryRequest(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "examples": [
-                {
-                    "question": "יש לי כאב ראש"
-                },
-                {
-                    "question": "יש לי חום וכאב גרון"
-                },
-                {
-                    "question": "כואב לי הבטן כבר שעתיים"
-                }
+                {"question": "יש לי כאב ראש"},
+                {"question": "יש לי חום וכאב גרון"},
+                {"question": "כואב לי הבטן כבר שעתיים"}
             ]
         }
 
