@@ -116,7 +116,6 @@ Edit the `.env` file with your configuration:
 # Required: Add your Groq API key
 GROQ_API_KEY=your_groq_api_key_here
 
-# Optional: Customize other settings
 GROQ_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
 LLM_TEMPERATURE=0.3
 VECTOR_SEARCH_TOP_K=3
@@ -145,10 +144,12 @@ Visit: http://localhost:8000 (Docs: /docs)
 
 ## ▶️ Docker Usage
 
-| Scenario                      | Command                                     |
-| ----------------------------- | ------------------------------------------- |
-| API only (port 8000)          | `docker compose up -d`                      |
-| API + nginx (8080 → API 8000) | `docker compose --profile production up -d` |
+| Scenario                     | Command                                                 |
+| ---------------------------- | ------------------------------------------------------- |
+| API only (port 8000)         | `docker compose up -d rag-medical-api`                  |
+| API + nginx reverse proxy    | `docker compose --profile production up -d`             |
+| Tests (ephemeral)            | `docker compose --profile test run --rm tests`          |
+| Full stack (api+nginx+tests) | `docker compose --profile production --profile test up` |
 
 Health check:
 
@@ -159,10 +160,76 @@ curl http://localhost:8000/health
 Diagnosis with debug:
 
 ```bash
-curl -X POST http://localhost:8000/diagnose?debug=true \
-  -H 'Content-Type: application/json' \
+curl -X POST "http://localhost:8000/diagnose?debug=true" \
+  -H "Content-Type: application/json" \
   -d '{"question": "יש לי כאב ראש"}'
 ```
+
+## 🧪 Tests
+
+### Local (no Docker)
+
+```bash
+pytest -q
+```
+
+Optional coverage:
+
+```bash
+pip install coverage
+coverage run -m pytest
+coverage report -m
+```
+
+### Docker Ephemeral Test Run
+
+Runs tests in isolated container (builds image if missing):
+
+```bash
+docker compose --profile test run --rm tests
+```
+
+### One-Shot: API + Tests (stack stops afterward)
+
+Bring up API, wait for health, run tests, exit with pytest status:
+
+```bash
+docker compose --profile test up --build --abort-on-container-exit --exit-code-from tests
+```
+
+### Full Stack: API + nginx + Tests
+
+```bash
+docker compose --profile production --profile test up --build --abort-on-container-exit --exit-code-from tests
+```
+
+### Keep Services Running, Run Tests Ad Hoc
+
+```bash
+docker compose --profile production up -d rag-medical-api nginx
+docker compose --profile test run --rm tests
+```
+
+### Implementation Notes
+
+- Test service reuses the main image; installs extra deps from `requirements-test.txt` at runtime (pytest, httpx).
+- `depends_on` health condition + internal curl loop ensure API is healthy before executing tests.
+- Heavy RAG functions are monkeypatched/stubbed to keep contract tests fast and deterministic.
+- Named volume `pytest_cache` prevents write errors with read‑only bind mount while keeping host clean.
+- Exit codes propagate with `--exit-code-from tests` for CI usage.
+
+### Common Commands Cheat Sheet
+
+| Goal                            | Command                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Quick local run                 | `pytest -q`                                                                                              |
+| Docker ephemeral run            | `docker compose --profile test run --rm tests`                                                           |
+| Full stack (API+tests) one-shot | `docker compose --profile test up --abort-on-container-exit --exit-code-from tests`                      |
+| Full stack (API+nginx+tests)    | `docker compose --profile production --profile test up --abort-on-container-exit --exit-code-from tests` |
+| Keep services, run tests        | `docker compose --profile test run --rm tests`                                                           |
+| Clean containers/volumes        | `docker compose down`                                                                                    |
+
+> Tip: Add `--build` to force image rebuild after Dockerfile or dependency changes.
 
 ## 📖 API Usage
 

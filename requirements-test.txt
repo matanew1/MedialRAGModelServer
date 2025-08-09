@@ -1,0 +1,3 @@
+# Additional test-only dependencies
+pytest
+httpx  # fastapi test client uses it under the hood

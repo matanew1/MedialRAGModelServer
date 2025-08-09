@@ -1,10 +1,14 @@
 from fastapi import FastAPI, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any
 from rag import get_answer, get_answer_with_debug
-from datetime import datetime, UTC
+from datetime import datetime, timezone
+try:  # Python 3.11+: datetime.UTC; fallback for 3.10
+    from datetime import UTC  # type: ignore
+except ImportError:  # pragma: no cover - compatibility shim
+    UTC = timezone.utc  # type: ignore
 import time
 import os
 import logging
@@ -126,14 +130,16 @@ class QueryRequest(BaseModel):
         examples=["יש לי כאב ראש"]
     )
 
-    class Config:
-        json_schema_extra = {
+    # Pydantic v2 style configuration (replaces deprecated inner Config class)
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {"question": "יש לי כאב ראש"},
                 {"question": "יש לי חום וכאב גרון"},
                 {"question": "כואב לי הבטן כבר שעתיים"}
             ]
         }
+    )
 
 class ResponseMetadata(BaseModel):
     response_time_ms: Optional[int] = Field(None, description="Response time in milliseconds")
@@ -343,7 +349,7 @@ async def diagnose(request: QueryRequest, debug: bool = Query(False, description
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_response.dict()
+            detail=error_response.model_dump()
         )
 
 # Add custom exception handler for validation errors

@@ -38,3 +38,33 @@ services:
     restart: unless-stopped
     profiles:
       - production
+
+  # Test runner service (ephemeral) - builds same image and executes pytest
+  tests:
+    build: .
+    # Install additional test-only deps then run pytest
+    command: >-
+      sh -c 'set -e;
+      pip install -q -r requirements-test.txt;
+      echo "Waiting for rag-medical-api health...";
+      for i in $(seq 1 30); do
+        if curl -sf http://rag-medical-api:8000/health > /dev/null; then
+          echo "API healthy"; break; fi; sleep 2;
+      done;
+      pytest -q --maxfail=1'
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    volumes:
+      - .:/app:ro
+      - pytest_cache:/app/.pytest_cache
+    depends_on:
+      rag-medical-api:
+        condition: service_healthy
+    profiles:
+      - test
+    # Prevent hanging containers once tests finish
+    restart: "no"
+
+volumes:
+  pytest_cache: {}
