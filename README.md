@@ -2,11 +2,13 @@
 
 A Retrieval-Augmented Generation (RAG) system for medical diagnosis assistance in Hebrew, built with FastAPI, FAISS vector search, and Groq LLM API.
 
-## Architecture UML
-### Diagram
+## Architecture UML + Sequence Diagram
+### Overview
+#### UML - Unified Modeling Language
+![Architecture Diagram](images/UML.png)
+#### Sequence Diagram - Visual representation of the interactions between different components in the system over time.
+![Sequence Diagram](images/SequenceDiagram.png)
 
-![Architecture Diagram](./docs/UML.png)
-![Architecture Diagram](./docs/SequenceDiagram.png)
 ## 🔧 Components
 
 ### 1. **FastAPI Web Server** (`app/main.py`)
