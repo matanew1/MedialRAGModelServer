@@ -1,0 +1,25 @@
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual envs
+venv/
+.env/
+.env.local
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Data that might be mounted instead
+index/
+
+# Git
+.git
+.gitignore
+
+# OS/files
+.DS_Store
+Thumbs.db
