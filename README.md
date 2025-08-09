@@ -1,411 +1,147 @@
 # RAG Medical Diagnosis API
 
-Intelligent, Hebrew-language medical assistance powered by Retrieval‑Augmented Generation (RAG): FastAPI + Sentence Transformers + FAISS + Groq LLM.
+Hebrew medical assistance via Retrieval‑Augmented Generation (FastAPI + Sentence Transformers + FAISS + Groq LLM). Answers are grounded ONLY in the curated JSON knowledge base.
 
 ---
 
-## 📐 Architecture (UML & Sequence)
+## Architecture
 
-| Diagram                                         | Description                               |
-| ----------------------------------------------- | ----------------------------------------- |
-| ![Architecture Diagram](images/UML.png)         | High‑level component & data flow overview |
-| ![Sequence Diagram](images/SequenceDiagram.png) | Detailed request lifecycle across layers  |
+The RAG Medical Diagnosis API is built on a modular architecture that leverages several key components:
 
-**Core Flow (per request)**
+1. **FastAPI**: The web framework for building the API, providing a simple and efficient way to handle HTTP requests and responses.
+2. **Sentence Transformers**: Used for generating embeddings from user queries and medical documents, enabling semantic search capabilities.
+3. **FAISS**: A library for efficient similarity search and clustering of dense vectors, allowing for fast retrieval of relevant medical information.
+4. **Groq LLM**: The language model used for generating natural language responses based on the retrieved information.
 
-```
-User Query → FastAPI → (Lazy Init if first query) → Embed → FAISS Vector Search → Context Assembly → Groq LLM → Response
-```
+## UML + Sequence Diagrams
 
-## 🔧 Main Components
+![UML](images/UML.png)
+![Sequence Diagram](images/sequenceDiagram.png)
 
-| Layer          | File                                             | Responsibilities                                                         |
-| -------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
-| API            | `app/main.py`                                    | FastAPI app, routing, models, CORS, health & diagnosis endpoints         |
-| RAG Core       | `app/rag.py`                                     | Lazy model/data/index load, embedding, FAISS similarity, prompt assembly |
-| LLM Adapter    | `app/model.py`                                   | Groq Chat Completions call, error surface                                |
-| Knowledge Base | `data/diseases.json`                             | Curated Hebrew medical conditions & metadata                             |
-| Infra          | `Dockerfile`, `docker-compose.yml`, `nginx.conf` | Container build, orchestration, reverse proxy, rate limiting             |
+## ✨ Key Features
 
-### Notable Design Choices
+- Lazy load of embedder + FAISS index (fast cold deploy memory profile)
+- Exact vector search (FAISS IndexFlatL2) for deterministic recall
+- Simple `/diagnose` endpoint with optional `debug=true` metadata
+- Docker & docker‑compose ready (API + optional nginx)
+- Lightweight test suite (pytest + monkeypatched heavy parts)
 
-- **Lazy Initialization**: Heavy model + index are loaded only on first query (reduces cold deploy memory spikes; see `RAG_LAZY_INIT`).
-- **Deterministic Retrieval**: Always top‑K (configurable) exact L2 search (FAISS `IndexFlatL2`) for medical reliability (no approximate recall loss).
-- **Separation of Concerns**: Prompt & retrieval independent of transport layer—simplifies testing and future migration to other model providers.
-- **Debug Traceability**: Optional `debug=true` query parameter on `/diagnose` returns embedding & retrieval metadata (indices, distances, prompt excerpt).
+## ⚡ Quick Start
 
-## 🚀 Request Lifecycle (Performance Budget)
-
-| Stage | Operation                                         | Typical Duration                           |
-| ----- | ------------------------------------------------- | ------------------------------------------ |
-| 1     | HTTP accept / validation                          | ~1 ms                                      |
-| 2     | (First request only) Lazy init model + load FAISS | 8‑40 s (download + encode if index absent) |
-| 3     | Embed query (512‑d)                               | 50‑200 ms                                  |
-| 4     | FAISS top‑K search                                | 1‑5 ms                                     |
-| 5     | Context JSON formatting                           | 1‑3 ms                                     |
-| 6     | LLM generation (Groq)                             | 1‑3 s                                      |
-| 7     | Serialize & respond                               | ~1 ms                                      |
-
-> After first initialization, steady‑state end‑to‑end latency: **~1.5–3.5 s** (dominated by LLM call).
-
-## ✅ RAG Advantages
-
-- Grounded: Answers constrained to curated knowledge base
-- Reduced Hallucination: Model cannot fabricate unseen conditions
-- Semantic Robustness: Multilingual model handles phrasing variations
-- Deterministic Retrieval: Exact vector search ensures recall consistency
-- Extensible: Swap model / add ranking stage without changing API
-
-## 🧪 Example (Hebrew Query)
-
-Input: `"יש לי כאב ראש"`
-
-Top‑3 retrieved (illustrative): `"כאבי ראש מתח"`, `"מיגרנה"`, `"כאב צוואר"`
-
-Prompt excerpt:
-
-```
-שאלה: יש לי כאב ראש
-
-מידע:
-{ JSON blocks for the 3 matched conditions }
-```
-
-LLM synthesizes structured medical guidance in Hebrew referencing retrieved context only.
-
-## 📁 Project Structure
-
-```
-MedialRAGModelServer/
-├── app/
-│   ├── main.py          # FastAPI app & endpoints
-│   ├── rag.py           # Lazy RAG core (embedding + FAISS)
-│   └── model.py         # Groq API adapter
-├── data/diseases.json   # Knowledge base (Hebrew)
-├── index/faiss.index    # Persisted FAISS index (generated)
-├── docker-compose.yml   # API + optional nginx profile
-├── nginx.conf           # Reverse proxy & rate limiting
-├── Dockerfile           # Container build
-├── requirements.txt     # Dependencies
-├── .env.example         # Environment template
-├── swagger.yaml         # OpenAPI schema
-└── README.md
-```
-
-## 🛠️ Installation & Setup
-
-### Prerequisites
-
-- Python 3.8+
-- Groq API key
-
-### 1. Clone & Install
+### Local
 
 ```bash
 git clone <repo-url>
 cd MedialRAGModelServer
-python -m venv .venv && source .venv/bin/activate  # (Windows: .venv\Scripts\activate)
+python -m venv .venv
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-### 2. Environment Configuration
-
-Edit the `.env` file with your configuration:
-
-```env
-# Required: Add your Groq API key
-GROQ_API_KEY=your_groq_api_key_here
-
-GROQ_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
-LLM_TEMPERATURE=0.3
-VECTOR_SEARCH_TOP_K=3
-PORT=8000
-```
-
-**Required Environment Variables:**
-
-- `GROQ_API_KEY`: Your Groq API key (get one from https://groq.com)
-
-**Optional Configuration:**
-
-- `GROQ_MODEL`: LLM model to use
-- `LLM_TEMPERATURE`: Response creativity (0.0-1.0)
-- `VECTOR_SEARCH_TOP_K`: Number of conditions to retrieve
-- `HOST`: Server host (default: 0.0.0.0)
-- `PORT`: Server port (default: 8000)
-
-### 3. Run (Development)
-
-```bash
+copy .env.example .env   # Edit GROQ_API_KEY
 python app/main.py
 ```
 
-Visit: http://localhost:8000 (Docs: /docs)
+Open: http://localhost:8000 (Docs at /docs)
 
-## ▶️ Docker Usage
-
-| Scenario                     | Command                                                 |
-| ---------------------------- | ------------------------------------------------------- |
-| API only (port 8000)         | `docker compose up -d rag-medical-api`                  |
-| API + nginx reverse proxy    | `docker compose --profile production up -d`             |
-| Tests (ephemeral)            | `docker compose --profile test run --rm tests`          |
-| Full stack (api+nginx+tests) | `docker compose --profile production --profile test up` |
-
-Health check:
+### Docker (API only)
 
 ```bash
-curl http://localhost:8000/health
+docker compose up -d rag-medical-api
 ```
 
-Diagnosis with debug:
+### Docker (API + nginx proxy)
 
 ```bash
-curl -X POST "http://localhost:8000/diagnose?debug=true" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "יש לי כאב ראש"}'
+docker compose --profile production up -d
 ```
 
-## 🧪 Tests
+### Expose Publicly (ngrok)
 
-### Local (no Docker)
+Custom reserved domain example:
+
+```bash
+ngrok http --url=cicada-helpful-chipmunk.ngrok-free.app 8000
+```
+
+## 🔌 Test
+
+Local:
 
 ```bash
 pytest -q
 ```
 
-Optional coverage:
-
-```bash
-pip install coverage
-coverage run -m pytest
-coverage report -m
-```
-
-### Docker Ephemeral Test Run
-
-Runs tests in isolated container (builds image if missing):
+Ephemeral container:
 
 ```bash
 docker compose --profile test run --rm tests
 ```
 
-### One-Shot: API + Tests (stack stops afterward)
-
-Bring up API, wait for health, run tests, exit with pytest status:
+Full stack (runs tests then exits):
 
 ```bash
-docker compose --profile test up --build --abort-on-container-exit --exit-code-from tests
+docker compose --profile test up --abort-on-container-exit --exit-code-from tests
 ```
 
-### Full Stack: API + nginx + Tests
+## 🧪 Example Request
 
 ```bash
-docker compose --profile production --profile test up --build --abort-on-container-exit --exit-code-from tests
+curl -X POST http://localhost:8000/diagnose \
+  -H "Content-Type: application/json" \
+  -d '{"question": "יש לי כאב ראש"}'
 ```
 
-### Keep Services Running, Run Tests Ad Hoc
+Add `?debug=true` for retrieval diagnostics.
 
-```bash
-docker compose --profile production up -d rag-medical-api nginx
-docker compose --profile test run --rm tests
+## ⚙️ Environment Variables (common)
+
+| Variable            | Default                                   | Notes                 |
+| ------------------- | ----------------------------------------- | --------------------- |
+| GROQ_API_KEY        | (required)                                | Groq auth token       |
+| GROQ_MODEL          | meta-llama/llama-4-scout-17b-16e-instruct | LLM model             |
+| LLM_TEMPERATURE     | 0.3                                       | 0.0–1.0 creativity    |
+| EMBEDDER_MODEL      | distiluse-base-multilingual-cased         | Sentence embeddings   |
+| VECTOR_SEARCH_TOP_K | 3                                         | Retrieval depth       |
+| DATA_PATH           | data/diseases.json                        | Knowledge base        |
+| INDEX_PATH          | index/faiss.index                         | Persisted FAISS index |
+| RAG_LAZY_INIT       | true                                      | Defer heavy load      |
+| PORT                | 8000                                      | Service port          |
+
+## 🧱 Minimal Project Map
+
+```
+app/ (main.py, rag.py, model.py)
+data/diseases.json
+index/faiss.index (generated)
+docker-compose.yml
+Dockerfile
 ```
 
-### Implementation Notes
+## 🐳 Common Docker Commands
 
-- Test service reuses the main image; installs extra deps from `requirements-test.txt` at runtime (pytest, httpx).
-- `depends_on` health condition + internal curl loop ensure API is healthy before executing tests.
-- Heavy RAG functions are monkeypatched/stubbed to keep contract tests fast and deterministic.
-- Named volume `pytest_cache` prevents write errors with read‑only bind mount while keeping host clean.
-- Exit codes propagate with `--exit-code-from tests` for CI usage.
+| Goal      | Command                                      |
+| --------- | -------------------------------------------- |
+| API dev   | docker compose up -d rag-medical-api         |
+| API+nginx | docker compose --profile production up -d    |
+| Run tests | docker compose --profile test run --rm tests |
+| Down      | docker compose down                          |
 
-### Common Commands Cheat Sheet
+## 🔧 Rebuild Index
 
-| Goal                            | Command                                                                                                  |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Quick local run                 | `pytest -q`                                                                                              |
-| Docker ephemeral run            | `docker compose --profile test run --rm tests`                                                           |
-| Full stack (API+tests) one-shot | `docker compose --profile test up --abort-on-container-exit --exit-code-from tests`                      |
-| Full stack (API+nginx+tests)    | `docker compose --profile production --profile test up --abort-on-container-exit --exit-code-from tests` |
-| Keep services, run tests        | `docker compose --profile test run --rm tests`                                                           |
-| Clean containers/volumes        | `docker compose down`                                                                                    |
+Delete `index/faiss.index` and issue any `/diagnose` request (auto‑rebuild + persist).
 
-> Tip: Add `--build` to force image rebuild after Dockerfile or dependency changes.
+## 🛡️ Production Suggestions (Brief)
 
-## 📖 API Usage
-
-### Endpoint: `POST /diagnose`
-
-**Request:**
-
-```json
-{
-  "question": "יש לי כאב ראש"
-}
-```
-
-**Response:**
-
-```json
-{
-  "question": "יש לי כאב ראש",
-  "answer": "בהתבסס על המידע שסופק, כאב הראש שלך יכול להיות קשור למספר אפשרויות..."
-}
-```
-
-### Interactive Documentation
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## 🔍 Technical Details
-
-### Vector Similarity Search
-
-| Aspect            | Value                                            |
-| ----------------- | ------------------------------------------------ |
-| Embedder          | distiluse-base-multilingual-cased (multilingual) |
-| Dimensionality    | 512                                              |
-| Index Type        | FAISS IndexFlatL2 (exact)                        |
-| Top‑K             | Configurable (`VECTOR_SEARCH_TOP_K`, default 3)  |
-| Query Search Time | ~1–5 ms                                          |
-
-### LLM Configuration
-
-| Setting         | Value                                     |
-| --------------- | ----------------------------------------- |
-| Provider        | Groq API                                  |
-| Model (default) | meta-llama/llama-4-scout-17b-16e-instruct |
-| Temperature     | 0.3                                       |
-| System Prompt   | Hebrew medical assistant                  |
-| Latency         | 1–3 s typical                             |
-
-### Performance Characteristics
-
-| Metric                   | Cold (first request)                           | Warm             |
-| ------------------------ | ---------------------------------------------- | ---------------- |
-| Model + Index Load       | 8–40 s (if index build)                        | –                |
-| Memory Peak (build)      | Depends on dataset (~ model + embedding array) | ~Model size only |
-| Steady Memory (small KB) | ~<1 GB typical for chosen model                | same             |
-| Query Latency            | 1.5–3.5 s                                      | 1.5–3.5 s        |
-| Index Growth             | ~1 MB / 1k conditions (flat)                   | linear           |
-
-> For constrained platforms set a smaller model via `EMBEDDER_MODEL` or pre‑commit the `faiss.index` to skip embedding construction.
-
-### System Requirements (Guidelines)
-
-| Environment | Minimum                    | Recommended               |
-| ----------- | -------------------------- | ------------------------- |
-| RAM         | 1–2 GB (lazy load)         | 4+ GB (faster cold start) |
-| CPU         | 1 vCPU                     | 2+ vCPU                   |
-| Storage     | 300–500 MB (model + index) | 1+ GB (growth)            |
-| Network     | Stable outbound HTTPS      | Stable outbound HTTPS     |
-
-## 🔄 Data Flow
-
-```mermaid
-graph TD
-    A[User Query] --> B[FastAPI Endpoint]
-    B --> C[RAG System]
-    C --> D[Query Embedding]
-    D --> E[FAISS Vector Search]
-    E --> F[Retrieve Top-3 Conditions]
-    F --> G[Format Context]
-    G --> H[Groq LLM API]
-    H --> I[Generated Response]
-    I --> J[JSON Response]
-```
-
-## 🧪 Example Queries
-
-| Hebrew Query    | Expected Response Type           |
-| --------------- | -------------------------------- |
-| "יש לי כאב ראש" | Headache-related conditions      |
-| "חום וכאב גרון" | Fever and throat pain conditions |
-| "כאב בטן"       | Abdominal pain conditions        |
-| "קשיי נשימה"    | Respiratory issues               |
-
-## ⚙️ Configuration
-
-Environment variables (see `.env.example`):
-
-| Variable            | Default                                   | Purpose                               |
-| ------------------- | ----------------------------------------- | ------------------------------------- |
-| GROQ_API_KEY        | (required)                                | Groq auth token                       |
-| GROQ_MODEL          | meta-llama/llama-4-scout-17b-16e-instruct | LLM selection                         |
-| LLM_TEMPERATURE     | 0.3                                       | Generation creativity                 |
-| EMBEDDER_MODEL      | distiluse-base-multilingual-cased         | Sentence embedding model              |
-| VECTOR_SEARCH_TOP_K | 3                                         | Retrieval depth                       |
-| DATA_PATH           | data/diseases.json                        | Knowledge base path                   |
-| INDEX_PATH          | index/faiss.index                         | Persisted FAISS index                 |
-| RAG_LAZY_INIT       | true                                      | Defer heavy loading until first query |
-| PORT                | 8000                                      | Service port                          |
-| HOST                | 0.0.0.0                                   | Bind interface                        |
-| LOG_LEVEL           | INFO                                      | Logging verbosity                     |
-| MAX_QUERY_LENGTH    | 1000                                      | Input validation limit                |
-| CORS_ORIGINS        | \*                                        | Allowed origins                       |
-
-## 🛡️ Production Hardening Checklist
-
-| Category         | Action                                                       |
-| ---------------- | ------------------------------------------------------------ |
-| Auth             | Add API key or JWT middleware                                |
-| Rate Limiting    | Enforce at nginx & application (beyond included basic limit) |
-| Observability    | Structured JSON logs, request IDs, metrics (Prometheus)      |
-| Error Hygiene    | Sanitize internal exceptions before returning                |
-| Index Versioning | Embed dataset hash & rebuild on mismatch                     |
-| Scaling          | Run multiple Uvicorn workers or behind process manager       |
-| Security         | HTTPS termination (enable TLS server block)                  |
-
-## 🚀 Deployment Notes
-
-| Target                   | Notes                                                                                                    |
-| ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Docker (single)          | Provided Dockerfile (can replace CMD with `uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2`) |
-| docker-compose           | `--profile production` adds nginx reverse proxy                                                          |
-| Low‑Memory (Render free) | Rely on `RAG_LAZY_INIT=true`, pre‑generate index locally & commit to skip build                          |
-| Fly.io / Cloud Run       | Use Docker image, mount volume or rebuild index at start                                                 |
-
-## 🧪 Debug Mode
-
-Add `?debug=true` to `/diagnose` to receive retrieval indices, distances & prompt preview (useful for evaluation; disable for public exposure).
-
-## 🔍 Troubleshooting
-
-| Symptom                         | Cause                               | Mitigation                                                                 |
-| ------------------------------- | ----------------------------------- | -------------------------------------------------------------------------- |
-| OOM during deploy               | Model + embeddings built eagerly    | Ensure `RAG_LAZY_INIT=true`; commit index; choose smaller `EMBEDDER_MODEL` |
-| Slow first request              | Lazy cold initialization            | Warm up with a synthetic query after deploy                                |
-| 404 behind proxy                | TLS block disabled but port exposed | Remove 443 mapping or enable HTTPS server block in `nginx.conf`            |
-| Pydantic warning `schema_extra` | Pydantic v2 rename                  | Use `json_schema_extra` (already updated)                                  |
-| Groq 401                        | Missing/invalid key                 | Set `GROQ_API_KEY` environment variable                                    |
-
-## 📊 Monitoring Suggestions
-
-Track: request latency histogram, FAISS search time, LLM API error rate, memory RSS, number of lazy init occurrences (should be 1), top query terms.
-
-## 🧩 Development
-
-| Task                       | Command                                    |
-| -------------------------- | ------------------------------------------ |
-| Run dev                    | `python app/main.py`                       |
-| Rebuild index (delete old) | Remove `index/faiss.index` and run a query |
-| Format (example)           | Add tool of choice (e.g. black)            |
+Add auth (API key/JWT), rate limiting (nginx + app), structured logs, request IDs, HTTPS termination, index versioning (hash dataset), multiple workers if CPU allows.
 
 ## 🤝 Contributing
 
-1. Fork & branch
-2. Create feature / fix
-3. Add / adjust tests (future enhancement) & docs
-4. PR with clear rationale & change summary
+Fork → branch → change → tests → PR with rationale.
 
-## 📄 License & Compliance
+## ⚠️ Medical Disclaimer
 
-Educational / research use. Ensure adherence to:
-
-- Groq API Terms of Service
-- Applicable medical information disclaimers
-- Privacy & data protection regulations
+Not a substitute for professional medical diagnosis or treatment.
 
 ---
 
-**⚠️ Medical Disclaimer**: This system is NOT a substitute for professional medical diagnosis or treatment. Always consult a qualified healthcare professional for medical concerns.
+Educational / research use only.

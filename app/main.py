@@ -85,6 +85,10 @@ Send medical queries in Hebrew to get relevant diagnosis information and recomme
         {
             "url": "http://localhost:8000",
             "description": "Local development server"
+        },
+        {
+            "url": "https://cicada-helpful-chipmunk.ngrok-free.app",
+            "description": "Public ngrok tunnel"
         }
     ],
     tags_metadata=[
