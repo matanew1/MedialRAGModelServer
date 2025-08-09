@@ -165,6 +165,28 @@ class ErrorResponse(BaseModel):
 # API Endpoints
 
 @app.get(
+    "/",
+    summary="Service Root",
+    description="Basic service info and helpful links.",
+    tags=["System"],
+    responses={
+        200: {
+            "description": "Service root information"
+        }
+    }
+)
+async def root():
+    return {
+        "name": "RAG Medical Diagnosis API",
+        "version": API_VERSION,
+        "environment": ENVIRONMENT,
+        "health": "/health",
+        "diagnose": "/diagnose",
+        "docs": "/docs",
+        "openapi": "/openapi.json"
+    }
+
+@app.get(
     "/health",
     response_model=HealthResponse,
     summary="Health Check",
