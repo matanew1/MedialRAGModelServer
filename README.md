@@ -37,7 +37,7 @@ python -m venv .venv
 # Windows PowerShell
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env   # Edit GROQ_API_KEY
+copy .env.example .env   # Edit GROQ_API_KEY1
 python app/main.py
 ```
 
@@ -77,12 +77,6 @@ Ephemeral container:
 docker compose --profile test run --rm tests
 ```
 
-Full stack (runs tests then exits):
-
-```bash
-docker compose --profile test up --abort-on-container-exit --exit-code-from tests
-```
-
 ## 🧪 Example Request
 
 ```bash
@@ -95,17 +89,38 @@ Add `?debug=true` for retrieval diagnostics.
 
 ## ⚙️ Environment Variables (common)
 
-| Variable            | Default                                   | Notes                 |
-| ------------------- | ----------------------------------------- | --------------------- |
-| GROQ_API_KEY        | (required)                                | Groq auth token       |
-| GROQ_MODEL          | meta-llama/llama-4-scout-17b-16e-instruct | LLM model             |
-| LLM_TEMPERATURE     | 0.3                                       | 0.0–1.0 creativity    |
-| EMBEDDER_MODEL      | distiluse-base-multilingual-cased         | Sentence embeddings   |
-| VECTOR_SEARCH_TOP_K | 3                                         | Retrieval depth       |
-| DATA_PATH           | data/diseases.json                        | Knowledge base        |
-| INDEX_PATH          | index/faiss.index                         | Persisted FAISS index |
-| RAG_LAZY_INIT       | true                                      | Defer heavy load      |
-| PORT                | 8000                                      | Service port          |
+| Variable            | Default                                   | Notes                                             |
+| ------------------- | ----------------------------------------- | ------------------------------------------------- |
+| GROQ_API_KEY1       | (required)                                | Primary Groq auth token                           |
+| GROQ_API_KEY2       | (empty)                                   | Optional fallback (used only if key1 fails)       |
+| GROQ_API_KEY3       | (empty)                                   | Optional fallback (used only if key1 & key2 fail) |
+| GROQ_MODEL          | meta-llama/llama-4-scout-17b-16e-instruct | LLM model                                         |
+| LLM_TEMPERATURE     | 0.3                                       | 0.0–1.0 creativity                                |
+| EMBEDDER_MODEL      | distiluse-base-multilingual-cased         | Sentence embeddings                               |
+| VECTOR_SEARCH_TOP_K | 3                                         | Retrieval depth                                   |
+| DATA_PATH           | data/diseases.json                        | Knowledge base                                    |
+| INDEX_PATH          | index/faiss.index                         | Persisted FAISS index                             |
+| RAG_LAZY_INIT       | true                                      | Defer heavy load                                  |
+| PORT                | 8000                                      | Service port                                      |
+
+### API Key Fallback
+
+The LLM adapter tries keys in order: `GROQ_API_KEY1 → GROQ_API_KEY2 → GROQ_API_KEY3`.
+
+Rules:
+
+1. If only `GROQ_API_KEY1` is set, normal single-key mode.
+2. `GROQ_API_KEY2/3` are only attempted when the previous key returns non-200, parse error, or network error.
+3. No rotation on success (always prefers key1 each request).
+4. If all provided keys fail an aggregated error is raised with per-key status.
+
+Example `.env` snippet:
+
+```
+GROQ_API_KEY1=primary_key
+GROQ_API_KEY2=backup_key
+GROQ_API_KEY3=second_backup_key
+```
 
 ## 🧱 Minimal Project Map
 
