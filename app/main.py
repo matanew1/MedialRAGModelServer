@@ -116,11 +116,27 @@ Use these endpoints to monitor service availability and performance.
 )
 
 # Add CORS middleware for production
+# Expand wildcard patterns (very basic support for leading https://*. )
+expanded_cors_origins: list[str] = []
+for o in CORS_ORIGINS:
+    o = o.strip()
+    if not o:
+        continue
+    if o == "*":
+        expanded_cors_origins = ["*"]
+        break
+    if o.startswith("https://*." ):
+        # Keep the pattern; FastAPI's CORSMiddleware does not natively support wildcards
+        # We'll allow '*' if such pattern exists to avoid blocking dynamic ngrok subdomains
+        expanded_cors_origins = ["*"]
+        break
+    expanded_cors_origins.append(o)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=expanded_cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
