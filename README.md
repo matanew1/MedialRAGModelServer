@@ -23,6 +23,8 @@ The RAG Medical Diagnosis API is built on a modular architecture that leverages 
 - Lazy load of embedder + FAISS index (fast cold deploy memory profile)
 - Exact vector search (FAISS IndexFlatL2) for deterministic recall
 - Simple `/diagnose` endpoint with optional `debug=true` metadata
+- API key monitoring via `/key-stats` endpoint
+- Round-robin API key rotation for load distribution
 - Docker & docker‑compose ready (API + optional nginx)
 - Lightweight test suite (pytest + monkeypatched heavy parts)
 
@@ -103,16 +105,28 @@ Add `?debug=true` for retrieval diagnostics.
 | RAG_LAZY_INIT       | true                                      | Defer heavy load                                  |
 | PORT                | 8000                                      | Service port                                      |
 
-### API Key Fallback
+### API Key Cyclic Rotation
 
-The LLM adapter tries keys in order: `GROQ_API_KEY1 → GROQ_API_KEY2 → GROQ_API_KEY3`.
+The LLM adapter now uses **round-robin (cyclic) rotation** across all available API keys for optimal load distribution:
 
-Rules:
+**Key Features:**
 
-1. If only `GROQ_API_KEY1` is set, normal single-key mode.
-2. `GROQ_API_KEY2/3` are only attempted when the previous key returns non-200, parse error, or network error.
-3. No rotation on success (always prefers key1 each request).
-4. If all provided keys fail an aggregated error is raised with per-key status.
+- **True Rotation**: Each request uses the next key in sequence, cycling back to the first key
+- **Thread-Safe**: Works correctly with FastAPI's concurrent request handling
+- **Fallback on Failure**: If the selected key fails, tries remaining keys in order
+- **Load Distribution**: Evenly distributes requests across all available keys
+- **Monitoring**: New `/key-stats` endpoint shows rotation status
+
+**Behavior:**
+
+1. Request 1 → `GROQ_API_KEY1`, Request 2 → `GROQ_API_KEY2`, Request 3 → `GROQ_API_KEY3`, Request 4 → `GROQ_API_KEY1` (cycle repeats)
+2. If `GROQ_API_KEY2` fails on Request 2, tries `GROQ_API_KEY3`, then `GROQ_API_KEY1`, but Request 3 still starts with `GROQ_API_KEY3`
+3. Failed keys are logged with detailed error information (network, HTTP status, or parse errors)
+
+**Monitoring:**
+
+- `GET /key-stats` - Returns current rotation state and statistics
+- Logs show which key was used for each request and any failures
 
 Example `.env` snippet:
 

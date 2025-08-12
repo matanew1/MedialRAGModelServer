@@ -3,7 +3,17 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any
-from rag import get_answer, get_answer_with_debug
+
+# Handle both direct execution and module import contexts
+try:
+    # When imported as a module (e.g., from tests)
+    from .rag import get_answer, get_answer_with_debug
+    from .model import get_current_key_stats
+except ImportError:
+    # When run directly (e.g., python app/main.py)
+    from rag import get_answer, get_answer_with_debug
+    from model import get_current_key_stats
+
 from datetime import datetime, timezone
 try:  # Python 3.11+: datetime.UTC; fallback for 3.10
     from datetime import UTC  # type: ignore
@@ -177,6 +187,13 @@ class HealthResponse(BaseModel):
     timestamp: str = Field(..., description="Current timestamp in ISO format")
     version: str = Field(..., description="API version", examples=["1.0.0"])
 
+class KeyStatsResponse(BaseModel):
+    """Response model for API key rotation statistics."""
+    available_keys: int = Field(..., description="Number of available API keys")
+    current_index: int = Field(..., description="Current rotation index")
+    next_key: str = Field(..., description="Next key to be used")
+    total_keys_configured: int = Field(..., description="Total keys configured in environment")
+
 class ErrorResponse(BaseModel):
     detail: str = Field(..., description="Error message describing what went wrong")
     error_code: Optional[str] = Field(None, description="Machine-readable error code")
@@ -201,6 +218,7 @@ async def root():
         "version": API_VERSION,
         "environment": ENVIRONMENT,
         "health": "/health",
+        "key_stats": "/key-stats",
         "diagnose": "/diagnose",
         "docs": "/docs",
         "openapi": "/openapi.json"
@@ -238,6 +256,50 @@ async def health_check():
         timestamp=datetime.now(UTC).isoformat(),
         version=API_VERSION
     )
+
+@app.get(
+    "/key-stats",
+    response_model=KeyStatsResponse,
+    summary="API Key Rotation Statistics",
+    description="Get current API key rotation status and statistics for monitoring and debugging",
+    responses={
+        200: {
+            "description": "API key rotation statistics",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "normal": {
+                            "summary": "Normal operation with multiple keys",
+                            "value": {
+                                "available_keys": 3,
+                                "current_index": 1,
+                                "next_key": "GROQ_API_KEY2",
+                                "total_keys_configured": 3
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    tags=["Monitoring"]
+)
+async def get_key_stats():
+    """
+    Get API key rotation statistics.
+    
+    Returns information about the current state of the API key rotation system,
+    useful for monitoring key usage distribution and debugging rotation issues.
+    """
+    try:
+        stats = get_current_key_stats()
+        return KeyStatsResponse(**stats)
+    except Exception as e:
+        logger.error(f"Error getting key stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to retrieve API key statistics"
+        )
 
 @app.post(
     "/diagnose",

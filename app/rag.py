@@ -11,7 +11,15 @@ from pathlib import Path
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from model import call_llm
+
+# Handle both direct execution and module import contexts
+try:
+    # When imported as a module (e.g., from tests)
+    from .model import call_llm
+except ImportError:
+    # When run directly or imported from another module in same directory
+    from model import call_llm
+
 from dotenv import load_dotenv, find_dotenv
 from threading import Lock
 
