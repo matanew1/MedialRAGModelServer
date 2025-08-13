@@ -5,3 +5,6 @@ sentence-transformers
 python-dotenv
 pydantic
 requests
+fuzzywuzzy
+python-Levenshtein
+email-validator
