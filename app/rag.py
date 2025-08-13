@@ -12,6 +12,10 @@ from fuzzywuzzy import fuzz
 import joblib
 import logging
 from threading import Lock
+import warnings
+
+# Suppress FutureWarning for encoder_attention_mask
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch.nn.modules.module")
 
 try:
     from .model import call_llm
@@ -80,6 +84,14 @@ HEBREW_MEDICAL_SYNONYMS = {
     "דלקת": ["אינפלמציה", "זיהום"]
 }
 
+# Category keywords for filtering relevance
+CATEGORY_KEYWORDS = {
+    "מחלות עיניים": ["עיניים", "עין", "דמעת", "אדמומיות", "גירוד", "הפרשה", "ראייה", "רגישות לאור"],
+    "מחלות זיהומיות": ["זיהום", "חום", "שיעול", "נזלת", "דלקת"],
+    "מחלות נוירולוגיות": ["כאב ראש", "סחרחורת", "בלבול", "התקפים"],
+    "מחלות עור": ["פריחה", "גירוד", "יובש", "אדמומיות בעור"]
+}
+
 def normalize_hebrew_text(text):
     if not text:
         return ""
@@ -101,11 +113,11 @@ def expand_medical_terms(text):
 def create_enhanced_text(item):
     parts = []
     if 'disease' in item:
-        parts.append(item['disease'])
+        parts.append(item['disease'] * 2)  # Double weight for disease name
     if 'symptoms_detailed' in item:
         symptoms = item['symptoms_detailed']
         if 'primary' in symptoms:
-            parts.extend(symptoms['primary'])
+            parts.extend([s * 2 for s in symptoms['primary']])  # Double weight for primary symptoms
         if 'secondary' in symptoms:
             parts.extend(symptoms['secondary'])
         if 'severity_scale' in symptoms:
@@ -113,7 +125,7 @@ def create_enhanced_text(item):
     if 'symptoms' in item:
         parts.append(item['symptoms'])
     if 'category' in item:
-        parts.append(item['category'])
+        parts.append(item['category'] * 2)  # Double weight for category
     if 'subcategory' in item:
         parts.append(item['subcategory'])
     if 'complications' in item:
@@ -123,6 +135,30 @@ def create_enhanced_text(item):
     if 'common' in item:
         common_map = {1: "מאוד נדיר", 2: "נדיר", 3: "בינוני", 4: "שכיח", 5: "מאוד שכיח"}
         parts.append(f"שכיחות {common_map.get(item['common'], 'לא ידוע')}")
+    if 'red_flags' in item:
+        parts.extend([f"דגל אדום {rf}" for rf in item['red_flags']])
+    if 'treatment' in item:
+        treatment = item['treatment']
+        if 'primary' in treatment:
+            parts.extend(treatment['primary'])
+        if 'medications' in treatment:
+            parts.extend(treatment['medications'])
+        if 'contraindications' in treatment:
+            parts.extend([f"התווית נגד {c}" for c in treatment['contraindications']])
+    if 'prognosis' in item:
+        parts.append(f"פרוגנוזה {item['prognosis']}")
+    if 'prevention' in item:
+        parts.extend([f"מניעה {p}" for p in item['prevention']])
+    if 'lab_tests' in item:
+        parts.extend([f"בדיקה {lt}" for lt in item['lab_tests']])
+    if 'risk_factors' in item:
+        parts.extend([f"גורם סיכון {rf}" for rf in item['risk_factors']])
+    if 'duration' in item:
+        parts.append(f"משך {item['duration']}")
+    if 'contagious' in item:
+        parts.append(f"מדבק {'כן' if item['contagious'] else 'לא'}")
+    if 'age_groups' in item:
+        parts.extend([f"קבוצת גיל {ag}" for ag in item['age_groups']])
     enhanced_text = " ".join(parts)
     return expand_medical_terms(enhanced_text)
 
@@ -219,7 +255,28 @@ def _build_prompt(query: str, context_items):
 מידע רפואי רלוונטי:
 {context_str}
 
-תשובה:"""
+תשובה: אני ממש מבין כמה לא נעים זה יכול להיות לחוות {query}. בוא נבין יחד מה הכי סביר שקורה, בצורה פשוטה וברורה, ואיך אפשר לעזור לך:
+
+**מה נראה הכי סביר**:
+- **{context_items[0]['disease']}**: התסמינים שלך ({query}) ממש מתאימים ל{context_items[0]['disease']}, כי הם כוללים {context_items[0]['symptoms']}. זו מחלה {context_items[0].get('common', 3) >= 4 and 'די שכיחה' or 'שלא רואים כל יום'}. {context_items[0].get('prognosis', 'בדרך כלל זה משתפר עם טיפול מתאים.')}
+
+**איך אני יודע שזה מתאים**:
+התסמינים שתיארת תואמים את התסמינים העיקריים של {context_items[0]['disease']}, והיא {context_items[0].get('category') == 'מחלות עיניים' and 'קשורה לעיניים' or 'קשורה למערכת מסוימת בגוף'}. {f'היא גם נפוצה בקרב {", ".join(context_items[0].get("age_groups", []))}' if context_items[0].get("age_groups") else 'היא יכולה להופיע בכל גיל.'}
+
+**אפשרויות אחרות שכדאי לשקול**:
+{''.join(f'- {item["disease"]}: {item["symptoms"]} ({item.get("prognosis", "פרוגנוזה לא ידועה")})\n' for item in context_items[1:]) if len(context_items) > 1 else '- כרגע אין אפשרויות אחרות שמתאימות ממש.'}
+
+**מה אפשר לעשות עכשיו**:
+- **דבר עם רופא**: כדאי לפנות לרופא {context_items[0].get('category') == 'מחלות עיניים' and 'עיניים' or 'כללי'} כדי שיבדוק אותך מקרוב{f', במיוחד אם אתה מרגיש {", ".join(context_items[0].get("red_flags", []))}' if context_items[0].get("red_flags") else ''}. {f'בדיקות כמו {", ".join(context_items[0].get("lab_tests", []))} יכולות לעזור לאשר את האבחנה.' if context_items[0].get("lab_tests") else 'בדיקה פשוטה יכולה לעזור לאשר את המצב.'}
+- **טיפים להקלה**: {f'{", ".join(context_items[0]["treatment"]["primary"])}.' if context_items[0].get("treatment", {}).get("primary") else 'נסה לנוח ולהקפיד על שתייה מרובה בינתיים.'} {f'אם הרופא ממליץ, אפשר לשקול {", ".join(context_items[0]["treatment"].get("medications", []))}.' if context_items[0].get("treatment", {}).get("medications") else ''} {f'משך המחלה בדרך כלל הוא {context_items[0].get("duration", "לא ידוע")}.' if context_items[0].get("duration") else ''}
+- **איך למנוע החמרה**: {f'{", ".join(context_items[0]["prevention"])}.' if context_items[0].get("prevention") else 'שטוף ידיים לעיתים קרובות והימנע ממגע עם אנשים חולים, במיוחד אם זה מדבק.'} {f'שים לב שזה {context_items[0].get("contagious", False) and "כן מדבק" or "לא מדבק"}.' if "contagious" in context_items[0] else ''}
+
+**מתי לרוץ לרופא**:
+אם אתה מרגיש {f'{", ".join(context_items[0].get("red_flags", ["משהו ממש לא נורמלי"]))}' if context_items[0].get("red_flags") else 'כאב חזק, קושי לנשום, או שהמצב מחמיר'}, תפנה מיד לרופא או למיון.
+
+אני כאן כדי לעזור, אז אם יש לך עוד שאלות או משהו לא ברור, תגיד לי! 😊
+
+**שימו לב**: המידע הזה נועד לעזור לך להבין מה קורה, אבל הוא לא תחליף לבדיקה אצל רופא אמיתי."""
 
 def hybrid_search(query: str, top_k: int = VECTOR_SEARCH_TOP_K):
     _ensure_initialized()
@@ -255,7 +312,7 @@ def hybrid_search(query: str, top_k: int = VECTOR_SEARCH_TOP_K):
         
         for idx, score in sorted_items:
             disease = normalize_hebrew_text(_medical_data[idx].get('disease', 'Unknown'))
-            if not any(fuzz.ratio(disease, seen) > 90 for seen in seen_diseases):
+            if not any(fuzz.ratio(disease, seen) > 80 for seen in seen_diseases):
                 unique_indices.append(idx)
                 seen_diseases.add(disease)
             if len(unique_indices) >= top_k:
@@ -267,9 +324,26 @@ def hybrid_search(query: str, top_k: int = VECTOR_SEARCH_TOP_K):
         
         query_candidate_pairs = [[enhanced_query, text] for text in candidate_texts]
         rerank_scores = _reranker.predict(query_candidate_pairs)
-        # Normalize rerank scores to [0, 1]
+        # Normalize and adjust rerank scores
         if rerank_scores.size > 0:
+            rerank_scores = np.clip(rerank_scores, 0, None)
             rerank_scores = (rerank_scores - np.min(rerank_scores)) / (np.max(rerank_scores) - np.min(rerank_scores) + 1e-8)
+            # Boost scores based on symptom match, prevalence, and category relevance
+            query_terms = set(normalize_hebrew_text(query).split())
+            for i, candidate in enumerate(candidates):
+                primary_symptoms = set(normalize_hebrew_text(" ".join(candidate.get('symptoms_detailed', {}).get('primary', []))).split())
+                secondary_symptoms = set(normalize_hebrew_text(" ".join(candidate.get('symptoms_detailed', {}).get('secondary', []))).split())
+                primary_match_ratio = len(query_terms.intersection(primary_symptoms)) / max(len(query_terms), 1) * 1.5
+                secondary_match_ratio = len(query_terms.intersection(secondary_symptoms)) / max(len(query_terms), 1) * 0.5
+                prevalence_score = candidate.get('common', 3) / 5.0 * 1.5  # Increased prevalence weight
+                # Category relevance boost
+                category = candidate.get('category', '')
+                category_score = 0
+                for cat, keywords in CATEGORY_KEYWORDS.items():
+                    if cat == category and any(kw in query_terms for kw in keywords):
+                        category_score = 0.2
+                        break
+                rerank_scores[i] = rerank_scores[i] * 0.5 + primary_match_ratio * 0.2 + secondary_match_ratio * 0.1 + prevalence_score * 0.15 + category_score
         else:
             rerank_scores = np.zeros_like(rerank_scores)
         
@@ -290,7 +364,7 @@ def get_answer(query: str):
         context_items, scores = hybrid_search(query)
         
         if not context_items:
-            return "לא מצאתי מידע רלוונטי לשאלתך. נסה לפרט יותר את הסימפטומים או השתמש במילים אחרות.", 0, 0.0
+            return "לא מצאתי מידע שמתאים בדיוק לתסמינים שתיארת. אולי תוכל להוסיף פרטים כמו כמה זמן זה נמשך, או אם יש תסמינים נוספים? אני כאן לעזור!", 0, 0.0
         
         prompt = _build_prompt(query, context_items)
         answer = call_llm(prompt)
